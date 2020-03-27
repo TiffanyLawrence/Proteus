@@ -319,12 +319,45 @@ model infon{
     void: addToOrInfon(our infItr: altItr) <- {
         source.value.items.pushAsAlt(altItr, altItr.item)
     }
-    void: addInfItrToWrkList(our infItr: RHSItr) <- {
-        wrkList.pushLast(RHSItr)
+    void: addInfItrToWrkList(our infItr: RHS2Add, bool: addAsAlt) <- {
+	if(true){wrkList.pushLast(RHS2Add); return()}  // this line runs old code, comment to test new func body below
+	if(addAsAlt){
+	    our infItr: firstItem <- NULL
+	    if(wrkList.size() > 0){firstItem <- wrkList.first()}
+	    if(firstItem != NULL and firstItem.isForAltStore){
+		if(RHS2Add.item.isOrLike()){   log(":A1:TODO: we need an infItr. use pov.altItr?")
+		    withEach pov in RHS2Add.item.source.value.items{
+			//firstItem.item.addToOrInfon(pov.item)
+		    }
+		}else{ //log(":A2")
+		    firstItem.item.addToOrInfon(RHS2Add)
+		}
+	    }else{
+		if(RHS2Add.item.isOrLike()){ log(":B1")
+		    RHS2Add.isForAltStore <- true
+		    wrkList.pushFirst(RHS2Add)
+		}else{
+		    log(":B2:"+RHS2Add.stringify())
+		    our infItr: newFirst <- RHS2Add.makeOrItr(RHS2Add)
+		    newFirst.isForAltStore <- true
+		    //wrkList.pushFirst(newFirst)
+wrkList.pushLast(RHS2Add)
+		}
+	    }
+	}
+	else{
+	    withEach ii in wrkList{
+		if(ii.item === RHS2Add.item){return()}
+	    }
+	    withEach iiUsed in usedWrkList{
+		if(iiUsed.item === RHS2Add.item){log("SKIP")return()}
+	    }
+	    wrkList.pushLast(RHS2Add)
+	}
     }
     void: takeWrkListFrom(our infon:from) <- {
         withEach wrkItm in from.wrkList{
-            addInfItrToWrkList(wrkItm)
+            addInfItrToWrkList(wrkItm, false)
         }
         from.wrkList.clear()
     }
@@ -397,6 +430,8 @@ model infItr{
     flag: wasRejected
     flag: readyToResolve
     flag: addNewSubDots
+    flag: isFromAlt
+    flag: isForAltStore
     me int: nestLvl
     me int: AlternativesNestLvl
     mode[sInvalid, sInited, sNotASeq, sFirstVisit, sSecondVisit, sEOL, sError, sNonIterable]: state
@@ -433,7 +468,7 @@ model infItr{
             newAltInfItr.state          <- sNonIterable
             initFrontier(newAltInfItr)
         return(newAltInfItr)
-        }
+    }
     me bool: isASeq(our infon: i) <- {
         return ((i.value.format==fLiteral and i.value.fType==LST) or i.value.format==fConcat)
     }
@@ -572,6 +607,7 @@ model infItr{
         Allocate(retVal)
         copyThisTo(retVal)
         retVal.goNextDeep(skipDots)
+        retVal.isFromAlt <- isFromAlt
         initFrontier(retVal)
         return(retVal)
     }
@@ -597,9 +633,12 @@ model infItr{
         if(nextItr.item.isTentative){
             our infItr: nxtOR <- nextItr.getNextExtended(true)
             if(nxtOR != NULL){
+                nextItr.isFromAlt <- true
                 if(!nextItr.item.isOrLike()){nextItr <- nextItr.makeOrItr(nextItr)}
                 nextItr.item.addToOrInfon(nxtOR)
                 nextItr.item.source.value.tailUnfinished <- false
+                nxtOR.isFromAlt <- true
+                nextItr.isFromAlt <- true
             }
         }
         return(nextItr)
@@ -625,7 +664,7 @@ model infItr{
         if(tagItr == pctTags.end()){
             pctTags.insert(tag, newItr)
         }else{
-            tagItr.val.item.addInfItrToWrkList(newItr)
+            tagItr.val.item.addInfItrToWrkList(newItr, false)
         }
     }
     our infItr: findOrAddPctTag(me string: tag) <- {
@@ -1082,7 +1121,7 @@ struct agent{
                 our infon: LHSFirst     <- LHS.getFirstItem()
                 our infon: RHSFirst     <- RHS.getFirstItem()
                 our infItr: RHSFirstItr <- makeInfItr(RHSFirst, LHSItr, NULL)
-                LHSFirst.addInfItrToWrkList(RHSFirstItr)
+                LHSFirst.addInfItrToWrkList(RHSFirstItr, false)
             }
             case moveRHSToFirstChild:{
             }
@@ -1462,8 +1501,6 @@ struct agent{
             while(!LHS.wrkList.isEmpty()){
                 RHSItrNext <- NULL
                 our infItr: RHSItr <- LHS.wrkList.first()
-                LHS.wrkList.popFirst()
-                LHS.usedWrkList.pushLast(RHSItr)
                 if(tmpErrCount>20){logFatalError("DEBUG: Too many loops...")} else {tmpErrCount <+- 1}
 
                 log("PAI: "+stringifyInfon(LHSItr.item) + " === "+stringifyInfon(RHSItr.item))
@@ -1487,6 +1524,8 @@ struct agent{
     //                    logFrontierLoop(LHSItr, "AFTER LHS")
                         possibilityItr <- possibilityItr.next
                     }
+                    LHS.wrkList.popFirst()
+                    LHS.usedWrkList.pushLast(RHSItr)
                     continue()
                 }
 
@@ -1498,6 +1537,8 @@ struct agent{
     //                    logFrontierLoop(LHSItr, "AFTER RHS")
                         possibilityItr <- possibilityItr.next
                     }
+                    LHS.wrkList.popFirst()
+                    LHS.usedWrkList.pushLast(RHSItr)
                     continue()
                 }
 if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable infItr!!!!")}
@@ -1511,6 +1552,8 @@ if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable in
                         log("     REJECT")
                      //   LHSItr.detachFromFrontier <- true
                      //   internalFrontierCount <-- 1
+                        LHS.wrkList.popFirst()
+                        LHS.usedWrkList.pushLast(RHSItr)
                         continue()
                     }
                     if(AlternativesNestLvl==0){doAction(action)}
@@ -1531,6 +1574,8 @@ if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable in
                 LHSItrNext <- findNextLHS(LHSItr, LHSfType, RHSfType, action.unknownAsList)
                 if(RHSItrNext == NULL){RHSItrNext <- findNextRHS(RHSItr, LHSfType, RHSfType)}
                 //log("RHSItrNext:"+RHSItrNext.stringify())
+                LHS.wrkList.popFirst()
+                LHS.usedWrkList.pushLast(RHSItr)
                 enqueueForProcessing(action, LHSItrNext, RHSItrNext, AlternativesNestLvl, action.breakDotCycle)
     //            logFrontierLoop(LHSItr, "AFTER ENQUEUE")
             }
@@ -1599,7 +1644,7 @@ if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable in
                     if(doEnqueue){
                         log("     ENQUEUE:" + LHSItr.stringify() + " === " + RHSItr.stringify())
                         LHSItr.AlternativesNestLvl <- altLvl
-                        LHSItr.item.addInfItrToWrkList(RHSItr)
+                        LHSItr.item.addInfItrToWrkList(RHSItr, RHSItr.isFromAlt)
                         me bool: itrAdded <- addInfItrToAgenda(LHSItr)
                         if(itrAdded and pred!=NULL){
                          //   LHSItr.insertNewPctTag("pred", pred)
@@ -1614,6 +1659,35 @@ if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable in
         }
         }else{logFatalError("crntLHS was NULL")}
     }
+    me void: printPredList(our infItr: ii, me string: indent) <- {
+	me int: predSz <- ii.predecessors.size()
+	if(predSz > 0){
+	    log("    PREDS:"+ii.mySymbol(ii)+"    "+ toString(ii.predecessors.size()))
+	    	withEach pred  in ii.predecessors{
+		log(indent+"    pred:"+pred.RHSItr.mySymbol(pred.RHSItr) +"    " +pred.RHSItr.item.mySymbol(pred.RHSItr.item)+"    "+ stringifyInfon(pred.RHSItr.item))
+	    }
+	    log("    ..............")
+	}
+    }
+    me void: printStructureInfo(our infon: inf, me bool: details, me string: indent) <- {
+	our POV: p <- inf.value.items.head
+        while(p != NULL){
+	    log(indent+p.mySymbol(p)+"    "+p.item.mySymbol(p.item)+"    "+stringifyInfon(p.item))
+	    if(p.item.itmMode == mSubItems){
+		printStructureInfo(p.item, details, indent+"    ")
+	    }else{
+		withEach ii in p.item.usedWrkList{
+		    log(indent+"    WL:"+ii.mySymbol(ii)+"    "+ii.infNode.mySymbol(ii.infNode)+"    "+ii.item.mySymbol(ii.item)+"    "+stringifyInfon(ii.item))
+		    printPredList(ii, indent+"    ")
+		    if(ii.item.source != NULL){
+			log(indent+"        source:"+ii.item.source.mySymbol(ii.item.source)+"    "+stringifyInfon(ii.item.source))
+			printStructureInfo(ii.item.source, details, indent+"            ")
+		    }
+		}
+	    }
+            p <- p.next
+        }
+    }
     me void: normalize(our infon: inf) <- {
         our infItr:: ii
         ii.initialize(inf)
@@ -1621,6 +1695,7 @@ if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable in
         addInfItrToAgenda(ii)
         processAgenda()
         ii.item.isNormed <- true
+	//log("-------------------"+ii.mySymbol(ii)); printStructureInfo(inf, true, ""); log("    -------------------"); printStructureInfo(inf.usedWrkList[0].item, false, "")
     }
     me string: fetchAsStr(their infon: i) <- {return(i.value.str)}
     me BigInt: fetchAsNum(their infon: i) <- {return(i.value.num)}
