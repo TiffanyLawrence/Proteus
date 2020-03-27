@@ -1473,6 +1473,42 @@ struct agent{
         }
         return(RHSItrNext)
     }
+    bool: processLHS_RHSPair(our infItr: LHSItr, our infItr: RHSItr, me int: AlternativesNestLvl, me int: internalFrontierCount) <- {
+	crntRHSMySymbol <- RHSItr.item.mySymbol(RHSItr.item)
+	if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable infItr!!!!")}
+	our infItr: RHSItrNext 	<- NULL
+	our infItr: LHSItrNext 	<- NULL
+	me bool: doResolve     	<- false
+	our infon: LHS 	   	<- LHSItr.item
+	our transformAction:: action
+	    action.LHSItr <- LHSItr
+	    action.RHSItr <- RHSItr
+	if(LHSItr.state != sSecondVisit){
+	    me bool: rejected <- testCompatibility(LHS, LHSItr, RHSItr, action)
+	    if(rejected){
+		LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
+		return(doResolve)
+	    }
+	    if(AlternativesNestLvl==0){doAction(action)}
+	    if(action.remainder != NULL){
+		RHSItrNext <- action.remainder
+	    }
+	}
+
+	if(LHSItr.state == sSecondVisit and (RHSItr.state == sSecondVisit or RHSItr.looseSize())){
+	    if(internalFrontierCount==LHSItr.predecessors.size()){
+		doResolve <- true
+	    }
+	}
+
+	me int: LHSfType <- LHSItr.item.value.fType
+	me int: RHSfType <- RHSItr.item.value.fType
+	LHSItrNext <- findNextLHS(LHSItr, LHSfType, RHSfType, action.unknownAsList)
+	if(RHSItrNext == NULL){RHSItrNext <- findNextRHS(RHSItr, LHSfType, RHSfType)}
+	LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
+	enqueueForProcessing(action, LHSItrNext, RHSItrNext, AlternativesNestLvl, action.breakDotCycle)
+	return(doResolve)
+}
     void: processAgendaItem(our infItr: LHSItr, me int: AlternativesNestLvl)<-{
         log("_________________________")
         prepWorkList(LHSItr)
@@ -1483,7 +1519,6 @@ struct agent{
         me bool: doResolve     <- false
         me int: internalFrontierCount <- frontierCount(LHSItr)
         if(RHS_Empty){
-    //    logFrontierLoop(LHSItr, "    BEFORE PAi")
             log("PAI no RHS:"+stringifyInfon(LHSItr.item))
             if(LHSItr.infNode.next == NULL and (LHSItr.parent != NULL and LHSItr.parent.item != NULL and LHSItr.parent.item.value.tailUnfinished)){
                 LHSItrNext <- LHSItr.getNextExtended(true)
@@ -1496,20 +1531,16 @@ struct agent{
             addInfItrToAgenda(LHSItrNext)
             processConcat(LHSItr)
         }else{
-   //     logFrontierLoop(LHSItr, "    BEFORE PAI")
             me int: tmpErrCount <- 0
             while(!LHS.wrkList.isEmpty()){
                 RHSItrNext <- NULL
                 our infItr: RHSItr <- LHS.wrkList.first()
+		//LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
                 if(tmpErrCount>20){logFatalError("DEBUG: Too many loops...")} else {tmpErrCount <+- 1}
 
                 log("PAI: "+stringifyInfon(LHSItr.item) + " === "+stringifyInfon(RHSItr.item))
-                //log("    ITRS:"+LHSItr.stringify() + " === "+RHSItr.stringify())
-                //log("     "+LHSItr.mySymbol(LHSItr) + " === "+RHSItr.mySymbol(RHSItr))
-                //log("     "+LHSItr.item.mySymbol(LHSItr.item) + " === "+RHSItr.item.mySymbol(RHSItr.item))
                 if(LHS.isOrLike()){
                     if(RHSItr.item.isOrLike()){ // set flag to add new #{...}
-                        log("LHSItr.addNewSubDots <- true in: "+ LHS.source.value.items.head.altItr.stringify())
                         LHS.source.value.items.head.altItr.addNewSubDots <- true
                     }
 
@@ -1521,11 +1552,9 @@ struct agent{
                         //log("   LHS_ENQUEUE:"+stringifyInfon(possibilityItr.altItr.item) + " === " + stringifyInfon(RHSItr.item))
                         log("    Action in LHS_IS_OR_LIKE:"+ action.mySymbol(action) + " <"+action.LHSItr.mySymbol(action.LHSItr)+":  " + action.LHSItr.stringify()+"> === <"+action.RHSItr.mySymbol(action.RHSItr)+":  " + action.RHSItr.stringify()+">"  )
                         enqueueForProcessing(action, possibilityItr.altItr, RHSItr, AlternativesNestLvl+1, false)
-    //                    logFrontierLoop(LHSItr, "AFTER LHS")
                         possibilityItr <- possibilityItr.next
                     }
-                    LHS.wrkList.popFirst()
-                    LHS.usedWrkList.pushLast(RHSItr)
+                    LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
                     continue()
                 }
 
@@ -1534,63 +1563,19 @@ struct agent{
                     while (possibilityItr!=NULL and possibilityItr.altItr != NULL){
                         //log("   RHS_ENQUEUE:"+stringifyInfon(LHSItr.item) + " === " + possibilityItr.altItr.stringify())
                         enqueueForProcessing(NULL, LHSItr, possibilityItr.altItr, AlternativesNestLvl+1, false)
-    //                    logFrontierLoop(LHSItr, "AFTER RHS")
                         possibilityItr <- possibilityItr.next
                     }
-                    LHS.wrkList.popFirst()
-                    LHS.usedWrkList.pushLast(RHSItr)
+		    if(RHSItr.item.source.value.tailUnfinished == false){
+			LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
+		    }
                     continue()
                 }
-if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable infItr!!!!")}
-                crntRHSMySymbol <- RHSItr.item.mySymbol(RHSItr.item)
-                our transformAction:: action
-                    action.LHSItr <- LHSItr
-                    action.RHSItr <- RHSItr
-                if(LHSItr.state != sSecondVisit){
-                    me bool: rejected <- testCompatibility(LHS, LHSItr, RHSItr, action)
-                    if(rejected){
-                        log("     REJECT")
-                     //   LHSItr.detachFromFrontier <- true
-                     //   internalFrontierCount <-- 1
-                        LHS.wrkList.popFirst()
-                        LHS.usedWrkList.pushLast(RHSItr)
-                        continue()
-                    }
-                    if(AlternativesNestLvl==0){doAction(action)}
-                    if(action.remainder != NULL){RHSItrNext <- action.remainder
-                        log("REMAINDER:"+ RHSItrNext.stringify())}
-                }
-
-                if(LHSItr.state == sSecondVisit and (RHSItr.state == sSecondVisit or RHSItr.looseSize())){
-                    //log("MAYBE RESOLVE  fCount:"+toString(internalFrontierCount)+"     predCount:"+toString(LHSItr.predecessors.size()))
-                    //withEach P in LHSItr.infNode.predecessors{log("    PRED LHS:"+ P.mySymbol(P) + "    PRED RHS:"+ P.RHSItr.mySymbol(P.RHSItr) )}
-                    if(internalFrontierCount==LHSItr.predecessors.size()){
-                        doResolve <- true
-                    }
-                }
-
-                me int: LHSfType <- LHSItr.item.value.fType
-                me int: RHSfType <- 0; if(!RHS_Empty){RHSfType <- RHSItr.item.value.fType}
-                LHSItrNext <- findNextLHS(LHSItr, LHSfType, RHSfType, action.unknownAsList)
-                if(RHSItrNext == NULL){RHSItrNext <- findNextRHS(RHSItr, LHSfType, RHSfType)}
-                //log("RHSItrNext:"+RHSItrNext.stringify())
-                LHS.wrkList.popFirst()
-                LHS.usedWrkList.pushLast(RHSItr)
-                enqueueForProcessing(action, LHSItrNext, RHSItrNext, AlternativesNestLvl, action.breakDotCycle)
-    //            logFrontierLoop(LHSItr, "AFTER ENQUEUE")
+		if(processLHS_RHSPair(LHSItr, RHSItr, AlternativesNestLvl, internalFrontierCount)){doResolve <- true}
             }
-            if(LHSItr.state != sEOL){
-                LHSItr.detachFromFrontier <- true
-            }
+            if(LHSItr.state != sEOL){LHSItr.detachFromFrontier <- true}
         }
-        if(LHSItr.detachFromFrontier){
-            //log("DETACHING: " + LHSItr.stringify())
-            frontierDetach(LHSItr)
-        } else {log("Not detatching: " + LHSItr.stringify())}
-  //      logFrontierLoop(LHSItr, "    AFTER PAI")
-        if(doResolve){
-            resolve(LHSItr)
-        }
+        if(LHSItr.detachFromFrontier){frontierDetach(LHSItr)}
+        if(doResolve){resolve(LHSItr)}
     }
 
     void: processAgenda()<-{
