@@ -169,6 +169,27 @@ struct GLOBAL{
         me int[our map string]:: used
         return(infonPrinter.printPureInfon(pure, NULL, used))
     }
+    me string: stringifyLRP(our infItr: LHSItr, our infItr: RHSItr) <- {
+        me string: iiSymbols <- "  "
+        me string: iSymbols  <- "  "
+	me string: infonStr
+	if(LHSItr == NULL){
+	    infonStr  <- "NULL"
+	}else{
+	    iiSymbols <+- LHSItr.mySymbol(LHSItr)
+	    iSymbols  <+- LHSItr.item.mySymbol(LHSItr.item)
+	    infonStr  <- stringifyInfon(LHSItr.item)
+	}
+	if(RHSItr == NULL){
+	    infonStr  <+- " === NULL"
+	}else{
+	    iiSymbols <+- " === " +RHSItr.mySymbol(RHSItr)
+	    iSymbols  <+- " === " +RHSItr.item.mySymbol(RHSItr.item)
+	    infonStr  <+- " === " +stringifyInfon(RHSItr.item)
+	    iSymbols  <+- "   ALT:"+dispBool(RHSItr.isFromAlt)
+	}
+        return(infonStr + iiSymbols + iSymbols)
+    }
 }
 struct InfonPrinter{
     me bool: isListWithDots(their pureInfon: pure) <- {

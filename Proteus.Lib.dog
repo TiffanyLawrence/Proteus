@@ -319,29 +319,33 @@ model infon{
     void: addToOrInfon(our infItr: altItr) <- {
         source.value.items.pushAsAlt(altItr, altItr.item)
     }
-    void: addInfItrToWrkList(our infItr: RHS2Add, bool: addAsAlt) <- {
-	if(true){wrkList.pushLast(RHS2Add); return()}  // this line runs old code, comment to test new func body below
-	if(addAsAlt){
+    void: addInfItrToWrkList(our infItr: RHS2Add, bool: isFromAlt) <- {
+	//if(true){wrkList.pushLast(RHS2Add); return()}  // this line runs old code, comment to test new func body below
+	if(isFromAlt){
 	    our infItr: firstItem <- NULL
 	    if(wrkList.size() > 0){firstItem <- wrkList.first()}
+	    //log("        FIRST:"+firstItem.stringify())
 	    if(firstItem != NULL and firstItem.isForAltStore){
-		if(RHS2Add.item.isOrLike()){   log("        A2WL:A1:TODO: we need an infItr. use pov.altItr?")
-		    withEach pov in RHS2Add.item.source.value.items{
-			//firstItem.item.addToOrInfon(pov.item)
+		if(RHS2Add.item.isOrLike()){
+		    our POV: pov <- RHS2Add.item.source.value.items.head
+		    while(pov != NULL){
+			firstItem.item.addToOrInfon(pov.altItr)
+			pov <- pov.next
 		    }
-		}else{ //log("        A2WL:A2")
+		    log("        A2WL:A1:"+RHS2Add.stringify())
+		}else{ log("        A2WL:A2"+RHS2Add.stringify())
 		    firstItem.item.addToOrInfon(RHS2Add)
 		}
 	    }else{
 		if(RHS2Add.item.isOrLike()){
 		    RHS2Add.isForAltStore <- true
 		    wrkList.pushFirst(RHS2Add)
-		    //log("        A2WL:B1:")
+		    log("        A2WL:B1:"+RHS2Add.stringify())
 		}else{
-		    //log("        A2WL:B2:"+RHS2Add.stringify())
 		    our infItr: newFirst <- RHS2Add.makeOrItr(RHS2Add)
 		    newFirst.isForAltStore <- true
 		    wrkList.pushFirst(newFirst)
+		    log("        A2WL:B2:"+newFirst.stringify())
 		}
 	    }
 	}
@@ -352,6 +356,7 @@ model infon{
 	    withEach iiUsed in usedWrkList{
 		if(iiUsed.item === RHS2Add.item){log("SKIP")return()}
 	    }
+	    //log("        A2WL:C:"+RHS2Add.stringify())
 	    wrkList.pushLast(RHS2Add)
 	}
     }
@@ -1440,7 +1445,7 @@ struct agent{
         if(LHSItr.item.isTentative and RHSItr.item.isTentative){
             action.breakDotCycle<-true
             LHSItr.stitchCmd <- keepDots
-            log("breakDotCycle = true");
+            //log("breakDotCycle = true");
         }
         // Do init for ?={...}
         if(LHSItr.item.infMode == isUnknown and RHSItr.item.value.fType == LST){
@@ -1480,7 +1485,7 @@ struct agent{
 	our infItr: LHSItrNext 	<- NULL
 	me bool: doResolve     	<- false
 	our infon: LHS 	   	<- LHSItr.item
-	//log("    PLR:"+LHSItr.stringify() + " === "+RHSItr.stringify())
+	//log("    PLR:"+stringifyLRP(LHSItr, RHSItr))
 	our transformAction:: action
 	    action.LHSItr <- LHSItr
 	    action.RHSItr <- RHSItr
@@ -1535,7 +1540,7 @@ struct agent{
                 our infItr: RHSItr <- LHS.wrkList.first()
 		//LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
                 if(tmpErrCount>20){logFatalError("DEBUG: Too many loops...")} else {tmpErrCount <+- 1}
-                log("PAI: "+LHSItr.stringify() + " === "+RHSItr.stringify())
+                log("PAI: "+stringifyLRP(LHSItr, RHSItr))
                 if(LHS.isOrLike()){
                     if(RHSItr.item.isOrLike()){ // set flag to add new #{...}
                         LHS.source.value.items.head.altItr.addNewSubDots <- true
@@ -1559,8 +1564,8 @@ struct agent{
                     our POV: possibilityItr <- RHSItr.item.source.value.items.begin()
                     while (possibilityItr!=NULL and possibilityItr.altItr != NULL){
                         //log("   RHS_ENQUEUE:"+stringifyInfon(LHSItr.item) + " === " + possibilityItr.altItr.stringify())
-                        //processLHS_RHSPair(LHSItr, possibilityItr.altItr, false, AlternativesNestLvl+1, internalFrontierCount)
-                        enqueueForProcessing(NULL, LHSItr, possibilityItr.altItr, AlternativesNestLvl+1, false)
+                        processLHS_RHSPair(LHSItr, possibilityItr.altItr, false, AlternativesNestLvl+1, internalFrontierCount)
+                        //enqueueForProcessing(NULL, LHSItr, possibilityItr.altItr, AlternativesNestLvl+1, false)
                         possibilityItr <- possibilityItr.next
                     }
 		    if(RHSItr.item.source.value.tailUnfinished == false){
@@ -1625,7 +1630,7 @@ struct agent{
                         }
                     }
                     if(doEnqueue){
-                        log("     ENQUEUE:" + LHSItr.stringify() + " === " + RHSItr.stringify())
+                        log("     ENQUEUE:" +stringifyLRP(LHSItr, RHSItr))
                         LHSItr.AlternativesNestLvl <- altLvl
                         LHSItr.item.addInfItrToWrkList(RHSItr, RHSItr.isFromAlt)
                         me bool: itrAdded <- addInfItrToAgenda(LHSItr)
