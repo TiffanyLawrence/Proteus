@@ -325,23 +325,23 @@ model infon{
 	    our infItr: firstItem <- NULL
 	    if(wrkList.size() > 0){firstItem <- wrkList.first()}
 	    if(firstItem != NULL and firstItem.isForAltStore){
-		if(RHS2Add.item.isOrLike()){   log(":A1:TODO: we need an infItr. use pov.altItr?")
+		if(RHS2Add.item.isOrLike()){   log("        A2WL:A1:TODO: we need an infItr. use pov.altItr?")
 		    withEach pov in RHS2Add.item.source.value.items{
 			//firstItem.item.addToOrInfon(pov.item)
 		    }
-		}else{ //log(":A2")
+		}else{ //log("        A2WL:A2")
 		    firstItem.item.addToOrInfon(RHS2Add)
 		}
 	    }else{
-		if(RHS2Add.item.isOrLike()){ log(":B1")
+		if(RHS2Add.item.isOrLike()){
 		    RHS2Add.isForAltStore <- true
 		    wrkList.pushFirst(RHS2Add)
+		    //log("        A2WL:B1:")
 		}else{
-		    log(":B2:"+RHS2Add.stringify())
+		    //log("        A2WL:B2:"+RHS2Add.stringify())
 		    our infItr: newFirst <- RHS2Add.makeOrItr(RHS2Add)
 		    newFirst.isForAltStore <- true
-		    //wrkList.pushFirst(newFirst)
-wrkList.pushLast(RHS2Add)
+		    wrkList.pushFirst(newFirst)
 		}
 	    }
 	}
@@ -713,7 +713,7 @@ model infItr{
             //S <- S + "(parent:" + parent.mySymbol(parent) + ")"
             //if(nextAnd){S <- S+ " & "+ nextAnd.stringify()}
             if(state==sSecondVisit){S <- S + ">SV"}
-            if(item.source){S <- S+ " source:"+item.source.mySymbol(item.source)+" "+ stringifyInfon(item.source)}
+            //if(item.source){S <- S+ " source:"+item.source.mySymbol(item.source)+" "+ stringifyInfon(item.source)}
         }
         S <- S+"]"
         return (S)
@@ -1473,20 +1473,21 @@ struct agent{
         }
         return(RHSItrNext)
     }
-    bool: processLHS_RHSPair(our infItr: LHSItr, our infItr: RHSItr, me int: AlternativesNestLvl, me int: internalFrontierCount) <- {
+    bool: processLHS_RHSPair(our infItr: LHSItr, our infItr: RHSItr, bool: fromWrkList, me int: AlternativesNestLvl, me int: internalFrontierCount) <- {
 	crntRHSMySymbol <- RHSItr.item.mySymbol(RHSItr.item)
 	if(LHSItr.state == sNonIterable){logFatalError("Trying to iterate nonIterable infItr!!!!")}
 	our infItr: RHSItrNext 	<- NULL
 	our infItr: LHSItrNext 	<- NULL
 	me bool: doResolve     	<- false
 	our infon: LHS 	   	<- LHSItr.item
+	//log("    PLR:"+LHSItr.stringify() + " === "+RHSItr.stringify())
 	our transformAction:: action
 	    action.LHSItr <- LHSItr
 	    action.RHSItr <- RHSItr
 	if(LHSItr.state != sSecondVisit){
 	    me bool: rejected <- testCompatibility(LHS, LHSItr, RHSItr, action)
 	    if(rejected){
-		LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
+		if(fromWrkList){LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)}
 		return(doResolve)
 	    }
 	    if(AlternativesNestLvl==0){doAction(action)}
@@ -1505,7 +1506,7 @@ struct agent{
 	me int: RHSfType <- RHSItr.item.value.fType
 	LHSItrNext <- findNextLHS(LHSItr, LHSfType, RHSfType, action.unknownAsList)
 	if(RHSItrNext == NULL){RHSItrNext <- findNextRHS(RHSItr, LHSfType, RHSfType)}
-	LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
+	if(fromWrkList){LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)}
 	enqueueForProcessing(action, LHSItrNext, RHSItrNext, AlternativesNestLvl, action.breakDotCycle)
 	return(doResolve)
 }
@@ -1513,12 +1514,10 @@ struct agent{
         log("_________________________")
         prepWorkList(LHSItr)
         our infon: LHS         <- LHSItr.item
-        me bool: RHS_Empty     <- LHS.wrkList.isEmpty()
-        our infItr: LHSItrNext <- NULL
-        our infItr: RHSItrNext <- NULL
         me bool: doResolve     <- false
         me int: internalFrontierCount <- frontierCount(LHSItr)
-        if(RHS_Empty){
+        if(LHS.wrkList.isEmpty()){
+            our infItr: LHSItrNext <- NULL
             log("PAI no RHS:"+stringifyInfon(LHSItr.item))
             if(LHSItr.infNode.next == NULL and (LHSItr.parent != NULL and LHSItr.parent.item != NULL and LHSItr.parent.item.value.tailUnfinished)){
                 LHSItrNext <- LHSItr.getNextExtended(true)
@@ -1533,12 +1532,10 @@ struct agent{
         }else{
             me int: tmpErrCount <- 0
             while(!LHS.wrkList.isEmpty()){
-                RHSItrNext <- NULL
                 our infItr: RHSItr <- LHS.wrkList.first()
 		//LHS.wrkList.popFirst(); LHS.usedWrkList.pushLast(RHSItr)
                 if(tmpErrCount>20){logFatalError("DEBUG: Too many loops...")} else {tmpErrCount <+- 1}
-
-                log("PAI: "+stringifyInfon(LHSItr.item) + " === "+stringifyInfon(RHSItr.item))
+                log("PAI: "+LHSItr.stringify() + " === "+RHSItr.stringify())
                 if(LHS.isOrLike()){
                     if(RHSItr.item.isOrLike()){ // set flag to add new #{...}
                         LHS.source.value.items.head.altItr.addNewSubDots <- true
@@ -1562,6 +1559,7 @@ struct agent{
                     our POV: possibilityItr <- RHSItr.item.source.value.items.begin()
                     while (possibilityItr!=NULL and possibilityItr.altItr != NULL){
                         //log("   RHS_ENQUEUE:"+stringifyInfon(LHSItr.item) + " === " + possibilityItr.altItr.stringify())
+                        //processLHS_RHSPair(LHSItr, possibilityItr.altItr, false, AlternativesNestLvl+1, internalFrontierCount)
                         enqueueForProcessing(NULL, LHSItr, possibilityItr.altItr, AlternativesNestLvl+1, false)
                         possibilityItr <- possibilityItr.next
                     }
@@ -1570,7 +1568,7 @@ struct agent{
 		    }
                     continue()
                 }
-		if(processLHS_RHSPair(LHSItr, RHSItr, AlternativesNestLvl, internalFrontierCount)){doResolve <- true}
+            if(processLHS_RHSPair(LHSItr, RHSItr, true, AlternativesNestLvl, internalFrontierCount)){doResolve <- true}
             }
             if(LHSItr.state != sEOL){LHSItr.detachFromFrontier <- true}
         }
